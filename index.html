@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>阅读助手</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-theme="light">
+
+<!-- ============ 书架视图 ============ -->
+<div id="shelfView" class="view active">
+  <header>
+    <div>
+      <h1>📚 <span data-i18n="appName">阅读助手</span></h1>
+      <div class="sub">导入书籍，双击打开朗读 · 大字护眼 · 逐字高亮 · 可调节语速</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn primary" id="btnImport">＋ 导入书籍</button>
+  </header>
+  <div class="weblib-sec">
+    <div class="weblib-head">
+      <div>
+        <h2>🌐 在线书库</h2>
+        <div class="sub">点击卡片在浏览器打开 · 下载后点右上角「＋ 导入书籍」加入书架</div>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn small" id="btnWeblibRefresh" title="从 Wikipedia 公开条目更新 Z-Library 官方域名">🔄 更新域名</button>
+      <button class="btn small" id="btnWeblibAdd" title="添加自定义书库">＋ 添加书库</button>
+    </div>
+    <div class="weblib-grid" id="weblibGrid"></div>
+  </div>
+  <div class="shelf-wrap">
+    <div class="shelf" id="shelf"></div>
+  </div>
+  <div style="display:flex;justify-content:flex-end;padding:8px 34px 14px;color:var(--ink-sub);font-size:12px">
+    <span id="appVersionLabel"></span>
+  </div>
+</div>
+
+<!-- ============ 朗读视图 ============ -->
+<div id="readerView" class="view">
+  <div class="progress-top"><i id="topProgress"></i></div>
+  <div class="topbar">
+    <button class="btn" id="btnBack">← 书架</button>
+    <div class="title" id="bookTitle">书名</div>
+    <span class="badge" id="chapterBadge">第 1 章</span>
+    <div class="spacer"></div>
+    <button class="btn small" id="btnSearchBack" title="返回搜索跳转前的位置" hidden>↩ 返回</button>
+    <div class="search-wrap" id="searchWrap">
+      <div class="search-field">
+        <input type="text" id="searchInput" placeholder="搜索全书内容，回车跳转" autocomplete="off" spellcheck="false">
+        <button class="search-clear" id="btnSearchClear" title="清空搜索" hidden>×</button>
+      </div>
+      <span class="search-count" id="searchCount"></span>
+      <div class="search-results" id="searchResults" hidden></div>
+    </div>
+    <button class="btn small" id="btnTocOpenTop" title="展开或收起左侧目录">📑 目录</button>
+    <button class="btn small" id="btnNoteOpen" title="展开或收起右侧书签笔记栏">📝 笔记</button>
+  </div>
+
+  <div class="reader-main">
+    <!-- 左侧目录（可收起） -->
+    <aside class="side toc-side" id="tocSide">
+      <div class="side-head">
+        <span>📑 目录</span>
+        <button class="icon-btn" id="btnTocClose" title="收起目录">«</button>
+      </div>
+      <div class="side-body chaplist" id="chaplist"></div>
+      <div class="side-foot" id="tocFoot"></div>
+    </aside>
+    <button class="side-reopen left" id="btnTocReopen" title="展开目录">»</button>
+
+    <!-- 正文 -->
+    <main class="textarea" id="text"></main>
+
+    <!-- 右侧书签笔记（可收起） -->
+    <aside class="side note-side collapsed" id="noteSide">
+      <div class="side-head">
+        <span>📝 书签与笔记</span>
+        <button class="icon-btn" id="btnNoteClose" title="收起侧栏">»</button>
+      </div>
+      <div class="note-tabs">
+        <button class="on" data-tab="bookmark">🔖 书签 <span id="bmCount">0</span></button>
+        <button data-tab="note">✏️ 笔记 <span id="ntCount">0</span></button>
+      </div>
+      <div class="note-list" id="bookmarkList"></div>
+      <div class="note-list" id="noteList" hidden></div>
+      <div class="note-compose" id="noteCompose" hidden>
+        <div class="compose-quote" id="noteQuote"></div>
+        <textarea id="noteInput" placeholder="写下你的读书心得…"></textarea>
+        <div class="compose-actions">
+          <button class="btn primary small" id="noteSave">保存笔记</button>
+          <button class="btn small" id="noteCancel">取消</button>
+        </div>
+      </div>
+      <div class="side-foot">提示：在正文句子上<b>右键</b>可加书签或写笔记</div>
+    </aside>
+  </div>
+
+  <!-- 底部播放栏：时间轴 + 进度 + 设置 -->
+  <div class="playbar" id="playbar">
+    <div class="playmain">
+      <button class="btn small" id="btnPrev" title="上一句">⏮</button>
+      <button class="btn play" id="btnPlay">▶ 播放</button>
+      <button class="btn small" id="btnNext" title="下一句">⏭</button>
+      <button class="btn small" id="btnStop" title="停止">■</button>
+      <div class="tl-wrap">
+        <div class="tl-info">
+          <span id="tlCur">00:00</span>
+          <span class="tl-label">本章时间轴 · 可拖动跳转</span>
+          <span id="tlTotal">00:00</span>
+        </div>
+        <input type="range" id="timeline" min="0" max="100" value="0" step="1" aria-label="朗读时间轴">
+      </div>
+      <button class="btn small" id="btnSettings">⚙ 设置</button>
+    </div>
+    <div class="playmeta">
+      <span id="chapterProgress">本章 0 / 0</span>
+      <span id="sentenceProgress">第 0 / 0 句</span>
+      <span id="bookProgress">全书 0%</span>
+      <span class="status" id="status">就绪</span>
+    </div>
+
+    <!-- 从底部展开的设置面板 -->
+    <div class="settings-panel" id="settingsPanel" hidden>
+      <div class="set-group">
+        <h4>语音</h4>
+        <div class="row"><span>引擎</span></div>
+        <select id="engineSel">
+          <option value="online">在线神经语音（音色多、音质好，需联网）</option>
+          <option value="local">系统语音（离线可用，音色少）</option>
+        </select>
+        <div class="row"><span>音色</span></div>
+        <select id="voiceSel"></select>
+        <div class="row"><span>语速</span><span id="rateVal">1.0×</span></div>
+        <input type="range" id="rate" min="0.5" max="2.5" step="0.1" value="1">
+        <div class="speeds" id="speeds">
+          <button data-speed="0.7">0.7</button>
+          <button data-speed="0.9">0.9</button>
+          <button data-speed="1" class="on">1.0</button>
+          <button data-speed="1.2">1.2</button>
+          <button data-speed="1.5">1.5</button>
+          <button data-speed="2">2.0</button>
+        </div>
+        <div class="row"><span>音量</span><span id="volumeVal">100%</span></div>
+        <input type="range" id="volume" min="0" max="1" step="0.05" value="1">
+      </div>
+      <div class="set-group">
+        <h4>显示</h4>
+        <div class="row"><span>字号</span><span id="fontSizeVal">22</span></div>
+        <input type="range" id="fontSize" min="16" max="44" step="1" value="22">
+        <div class="row"><span>行距</span><span id="lineHeightVal">1.9</span></div>
+        <input type="range" id="lineHeight" min="1.4" max="2.6" step="0.1" value="1.9">
+        <div class="row"><span>配色</span></div>
+        <select id="themeSel">
+          <option value="light">浅色（默认）</option>
+          <option value="eye">护眼米色</option>
+          <option value="dark">深色夜间</option>
+        </select>
+        <label class="toggle"><input type="checkbox" id="focusMode"> 聚焦模式（只显示当前句）</label>
+        <label class="toggle"><input type="checkbox" id="autoScroll" checked> 自动跟随滚动</label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 右键菜单 -->
+<div class="ctx-menu" id="ctxMenu" hidden>
+  <div data-act="copysel">📋 复制所选文字</div>
+  <div data-act="copypara">📄 复制本段文字</div>
+  <div class="ctx-sep"></div>
+  <div data-act="bookmark">🔖 加书签</div>
+  <div data-act="note">✏️ 写读书笔记</div>
+  <div data-act="play">▶ 从这里开始朗读</div>
+  <div data-act="viewimg">🔍 查看图表大图</div>
+</div>
+
+<!-- 图表大图 -->
+<div class="lightbox" id="lightbox" hidden>
+  <div class="lb-stage" id="lbStage">
+    <img id="lightboxImg" alt="书中图表" draggable="false">
+  </div>
+  <div class="lb-cap" id="lightboxCap"></div>
+  <div class="lb-toolbar">
+    <button id="btnZoomOut" title="缩小（滚轮向下 / -）">－</button>
+    <span id="lbZoomLabel">100%</span>
+    <button id="btnZoomIn" title="放大（滚轮向上 / +）">＋</button>
+    <button id="btnZoomFit" class="lb-fit" title="恢复原始大小并居中（0）">适应窗口</button>
+  </div>
+  <button class="lb-close" id="btnLightboxClose" title="关闭（Esc）">×</button>
+</div>
+
+<!-- 导入进度 -->
+<div class="overlay" id="overlay">
+  <div class="card">
+    <div class="spinner"></div>
+    <div id="overlayText">正在导入书籍…</div>
+    <div style="color:var(--ink-sub);font-size:13px;margin-top:8px" id="overlaySub">解析文本需要一点时间</div>
+  </div>
+</div>
+<!-- 添加/编辑在线书库 -->
+<div class="modal" id="webLibModal" hidden>
+  <div class="modal-card">
+    <h3 id="webLibModalTitle">添加在线书库</h3>
+    <div class="modal-field"><label>名称</label><input type="text" id="webLibName" placeholder="例如：我的书库" autocomplete="off"></div>
+    <div class="modal-field"><label>网址</label><input type="text" id="webLibUrl" placeholder="https://example.com" autocomplete="off" spellcheck="false"></div>
+    <div class="modal-field"><label>图标（可选，一个字符）</label><input type="text" id="webLibIcon" placeholder="🌐" autocomplete="off"></div>
+    <div class="modal-actions">
+      <button class="btn primary small" id="webLibSave">保存</button>
+      <button class="btn small" id="webLibCancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 设置窗口：左侧导航，右侧内容 -->
+<div class="modal" id="settingsModal" hidden>
+  <div class="settings-window">
+    <div class="settings-titlebar">
+      <div class="window-dots"><i></i><i></i><i></i></div>
+      <span id="settingsTitle" data-i18n="settingsTitle">设置</span>
+      <button class="win-close" id="settingsClose" title="关闭">×</button>
+    </div>
+    <div class="settings-body">
+      <nav class="settings-nav">
+        <button class="active" data-page="general" id="navGeneral" data-i18n="general">通用</button>
+        <button data-page="about" id="navAbout" data-i18n="aboutNav">关于</button>
+      </nav>
+      <div class="settings-pages">
+        <section id="pageGeneral" class="settings-page">
+          <h3 data-i18n="general">通用</h3>
+          <div class="setting-row column">
+            <div class="setting-name" data-i18n="libraryLocation">书籍库位置</div>
+            <input type="text" id="settingsLibPath" readonly spellcheck="false">
+            <div class="setting-actions">
+              <button class="btn small" id="settingsOpenLib" data-i18n="openFolder">打开文件夹</button>
+              <button class="btn small" id="settingsCopyPath" data-i18n="copyPath">复制路径</button>
+            </div>
+          </div>
+          <div class="setting-row column">
+            <div class="setting-name" data-i18n="closeBehavior">关闭按钮行为</div>
+            <label class="radio-line"><input type="radio" name="closeAction" value="quit"><span data-i18n="closeQuit">退出程序</span></label>
+            <label class="radio-line"><input type="radio" name="closeAction" value="tray"><span data-i18n="closeTray">最小化到系统托盘</span></label>
+          </div>
+        </section>
+        <section id="pageAbout" class="settings-page" hidden>
+          <h3 data-i18n="aboutApp">关于阅读助手</h3>
+          <div class="about-line"><span data-i18n="version">版本</span> <b id="aboutVersion">—</b></div>
+          <div class="about-sub" data-i18n="aboutDesc">导入本地书籍，逐句高亮朗读，支持书签与笔记。</div>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="node_modules/jszip/dist/jszip.min.js"></script>
+<script src="node_modules/pdfjs-dist/build/pdf.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+{
+  "name": "bookshelf-reader",
+  "version": "2.1.0",
+  "description": "阅读助手（my reading assistant）- 导入书籍，双击朗读，逐句高亮",
+  "main": "main.js",
+  "author": "WorkBuddy",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64",
+    "pack": "electron-builder --dir"
+  },
+  "build": {
+    "appId": "com.workbuddy.myreadingassistant",
+    "productName": "阅读助手",
+    "npmRebuild": false,
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "language": "2052"
+    },
+    "files": [
+      "**/*",
+      "!dist/**",
+      "!*.log",
+      "!.pdfwork_*"
+    ],
+    "extraMetadata": {
+      "main": "main.js"
+    }
+  },
+  "dependencies": {
+    "jpeg-js": "^0.4.4",
+    "jszip": "^3.10.1",
+    "node-edge-tts": "^1.2.12",
+    "pdfjs-dist": "^3.11.174"
+  },
+  "devDependencies": {
+    "electron": "^32.3.3",
+    "electron-builder": "^24.13.3"
+  }
+}
