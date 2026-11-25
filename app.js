@@ -1387,6 +1387,7 @@ async function openSettingsDialog(page) {
     r.checked = r.value === s.closeAction;
   });
   $('aboutVersion').textContent = v || '—';
+  $('autoCheckUpdate').checked = s.autoCheckUpdate !== false;
   switchSettingsPage(page || 'general');
   $('settingsModal').hidden = false;
 }
@@ -1424,6 +1425,116 @@ $('navAbout').addEventListener('click', () => switchSettingsPage('about'));
 document.querySelectorAll('input[name="closeAction"]').forEach(r => {
   r.addEventListener('change', e => { BR.settingsSetCloseAction(e.target.value); });
 });
+$('autoCheckUpdate').addEventListener('change', e => {
+  BR.settingsSetAutoCheck(e.target.checked);
+  if (e.target.checked) checkForUpdates(true);
+});
+
+/* ---------- 软件更新 ---------- */
+let updateInfo = null;
+let updateBusy = false;
+function setUpdateStatus(text) { $('updateStatus').textContent = text || ''; }
+function cleanNotes(notes) {
+  const s = String(notes || '');
+  return s.replace(/SHA-256:\s*[a-fA-F0-9]{64}/gi, '').trim() || '—';
+}
+async function checkForUpdates(silent) {
+  if (updateBusy) return;
+  updateBusy = true;
+  $('btnCheckUpdate').disabled = true;
+  setUpdateStatus(uiT.checking || '正在检查…');
+  try {
+    const r = await BR.updateCheck();
+    if (!r || !r.ok) {
+      setUpdateStatus(uiT.checkFail || '检查失败，请检查网络后重试');
+      if (!silent) toast(uiT.checkFail || '检查失败，请检查网络后重试');
+      return;
+    }
+    updateInfo = r;
+    if (r.hasUpdate) {
+      setUpdateStatus((uiT.newVersion || '发现新版本') + ' v' + r.latest);
+      $('btnOpenRelease').hidden = false;
+      $('btnOpenRelease').onclick = () => BR.openExternal(r.url || 'https://github.com/matrix4quant/My-Reading-Assistant/releases');
+      if (!silent) showUpdateDialog(r);
+    } else {
+      setUpdateStatus((uiT.upToDate || '已是最新版本') + ' · v' + r.current);
+      $('btnOpenRelease').hidden = true;
+      if (!silent) toast((uiT.upToDate || '已是最新版本') + ' v' + r.current);
+    }
+  } catch (e) {
+    setUpdateStatus(uiT.checkFail || '检查失败，请检查网络后重试');
+    if (!silent) toast(uiT.checkFail || '检查失败，请检查网络后重试');
+  } finally {
+    updateBusy = false;
+    $('btnCheckUpdate').disabled = false;
+  }
+}
+function showUpdateDialog(r) {
+  $('updateModalVersion').textContent = 'v' + r.latest + '  (当前 v' + r.current + ')';
+  $('updateModalNotes').textContent = cleanNotes(r.notes);
+  $('updateProgressWrap').hidden = true;
+  $('updateProgressBar').style.width = '0%';
+  $('updateModalStatus').textContent = '';
+  $('btnUpdateNow').disabled = false;
+  $('btnUpdateNow').textContent = uiT.downloadUpdate || '下载并更新';
+  $('btnUpdateLater').textContent = uiT.updateLater || '稍后';
+  $('updateModal').hidden = false;
+}
+function closeUpdateDialog() { $('updateModal').hidden = true; }
+async function startUpdate() {
+  if (!updateInfo || updateBusy) return;
+  updateBusy = true;
+  $('btnUpdateNow').disabled = true;
+  $('btnUpdateLater').disabled = true;
+  $('updateProgressWrap').hidden = false;
+  $('updateProgressBar').style.width = '0%';
+  $('updateModalStatus').textContent = uiT.downloading || '正在下载…';
+  $('btnUpdateNow').textContent = uiT.downloading || '正在下载…';
+  try {
+    const d = await BR.updateDownload(updateInfo);
+    if (!d || !d.ok) {
+      $('updateModalStatus').textContent = uiT.downloadFail || '下载失败，请稍后重试';
+      toast(uiT.downloadFail || '下载失败，请稍后重试');
+      return;
+    }
+    if (d.verified === false) {
+      $('updateModalStatus').textContent = uiT.shaWarn || '校验未通过，已取消安装';
+      toast(uiT.shaWarn || '校验未通过，已取消安装');
+      return;
+    }
+    $('updateModalStatus').textContent = (uiT.verifying || '正在校验…') + (d.verified ? ' ✓' : '');
+    const i = await BR.updateInstall({ path: d.path, version: d.version });
+    if (!i || !i.ok) {
+      $('updateModalStatus').textContent = uiT.installFail || '安装失败，请手动下载安装';
+      toast(uiT.installFail || '安装失败，请手动下载安装');
+      return;
+    }
+    $('updateModalStatus').textContent = uiT.restartHint || '下载完成后会保留旧版 exe，自动启动新版。';
+    $('btnUpdateNow').textContent = uiT.installNow || '安装并重启';
+  } catch (e) {
+    $('updateModalStatus').textContent = uiT.updateError || '更新失败';
+    toast((uiT.updateError || '更新失败') + '：' + (e.message || e));
+  } finally {
+    updateBusy = false;
+    $('btnUpdateLater').disabled = false;
+  }
+}
+BR.onUpdateProgress(pct => {
+  if ($('updateProgressWrap').hidden) return;
+  $('updateProgressBar').style.width = Math.max(0, Math.min(100, pct)) + '%';
+  $('updateModalStatus').textContent = (uiT.downloading || '正在下载…') + ' ' + pct + '%';
+});
+BR.onUpdateAvailable(r => {
+  updateInfo = r;
+  setUpdateStatus((uiT.newVersion || '发现新版本') + ' v' + r.latest);
+  $('btnOpenRelease').hidden = false;
+  $('btnOpenRelease').onclick = () => BR.openExternal(r.url || 'https://github.com/matrix4quant/My-Reading-Assistant/releases');
+  toast((uiT.updateAvailable || '有新版本可用') + ' v' + r.latest);
+});
+$('btnCheckUpdate').addEventListener('click', () => checkForUpdates(false));
+$('btnUpdateLater').addEventListener('click', closeUpdateDialog);
+$('updateModal').addEventListener('click', e => { if (e.target === $('updateModal')) closeUpdateDialog(); });
+$('btnUpdateNow').addEventListener('click', startUpdate);
 $('btnWeblibRefresh').addEventListener('click', () => refreshWebLibDomain(false));
 $('btnWeblibAdd').addEventListener('click', () => openWebLibModal(null));
 $('webLibSave').addEventListener('click', saveWebLib);
@@ -1608,6 +1719,8 @@ $('focusMode').addEventListener('change', render);
 $('autoScroll').addEventListener('change', render);
 
 document.addEventListener('keydown', e => {
+  if (e.code === 'Escape' && !$('updateModal').hidden) { closeUpdateDialog(); return; }
+  if (e.code === 'Escape' && !$('settingsModal').hidden) { closeSettingsDialog(); return; }
   if (!$('readerView').classList.contains('active')) return;
   if (e.code === 'Escape') { hideCtxMenu(); cancelNote(); closeLightbox(); $('searchResults').hidden = true; return; }
   if (!$('lightbox').hidden) {

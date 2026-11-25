@@ -488,3 +488,22 @@ button, select, input, textarea { font-family: inherit; }
 }
 .setting-actions { display: flex; gap: 10px; margin-top: 10px; }
 .radio-line { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); padding: 7px 0; cursor: pointer; }
+
+/* ---------- 软件更新 ---------- */
+.update-status { font-size: 13px; color: var(--ink-sub); align-self: center; }
+.update-card { width: min(560px, 92vw); }
+.update-line { font-size: 13px; color: var(--ink-sub); margin-bottom: 12px; }
+.update-line b { color: var(--accent); font-size: 15px; }
+.update-notes-label { font-size: 13px; color: var(--ink-sub); margin-bottom: 6px; }
+.update-notes {
+  max-height: 220px; overflow: auto; margin: 0; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
+  color: var(--ink); font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+}
+.update-progress-wrap { margin-top: 14px; }
+.update-progress {
+  height: 8px; border-radius: 6px; background: var(--line); overflow: hidden; margin-bottom: 8px;
+}
+.update-progress > div {
+  height: 100%; width: 0%; background: var(--accent); transition: width .2s ease;
+}

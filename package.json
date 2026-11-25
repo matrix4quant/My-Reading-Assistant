@@ -1,6 +1,6 @@
 {
   "name": "bookshelf-reader",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "阅读助手（my reading assistant）- 导入书籍，双击朗读，逐句高亮",
   "main": "main.js",
   "author": "WorkBuddy",

@@ -241,6 +241,16 @@
             <label class="radio-line"><input type="radio" name="closeAction" value="quit"><span data-i18n="closeQuit">退出程序</span></label>
             <label class="radio-line"><input type="radio" name="closeAction" value="tray"><span data-i18n="closeTray">最小化到系统托盘</span></label>
           </div>
+          <div class="setting-row column">
+            <div class="setting-name" data-i18n="softwareUpdate">软件更新</div>
+            <div class="setting-desc" data-i18n="updateDesc">从 GitHub 检查并安装新版本，旧版本会保留在本地。</div>
+            <label class="radio-line"><input type="checkbox" id="autoCheckUpdate"><span data-i18n="autoCheck">启动时自动检查更新</span></label>
+            <div class="setting-actions">
+              <button class="btn small" id="btnCheckUpdate" data-i18n="checkNow">检查更新</button>
+              <span class="update-status" id="updateStatus"></span>
+              <button class="btn small" id="btnOpenRelease" data-i18n="openRelease" hidden>打开发布页</button>
+            </div>
+          </div>
         </section>
         <section id="pageAbout" class="settings-page" hidden>
           <h3 data-i18n="aboutApp">关于阅读助手</h3>
@@ -248,6 +258,24 @@
           <div class="about-sub" data-i18n="aboutDesc">导入本地书籍，逐句高亮朗读，支持书签与笔记。</div>
         </section>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- 新版本确认弹窗 -->
+<div class="modal" id="updateModal" hidden>
+  <div class="modal-card update-card">
+    <h3 id="updateModalTitle" data-i18n="newVersion">发现新版本</h3>
+    <div class="update-line"><span data-i18n="version">版本</span> <b id="updateModalVersion">—</b></div>
+    <div class="update-notes-label" data-i18n="updateNotes">更新说明</div>
+    <pre class="update-notes" id="updateModalNotes"></pre>
+    <div class="update-progress-wrap" id="updateProgressWrap" hidden>
+      <div class="update-progress"><div id="updateProgressBar"></div></div>
+      <div class="update-status" id="updateModalStatus"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="btnUpdateLater" data-i18n="updateLater">稍后</button>
+      <button class="btn primary" id="btnUpdateNow" data-i18n="downloadUpdate">下载并更新</button>
     </div>
   </div>
 </div>

@@ -2,6 +2,10 @@ const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, Menu, Tray } = re
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const http = require('http');
+const os = require('os');
+const crypto = require('crypto');
+const { spawn } = require('child_process');
 const { pathToFileURL } = require('url');
 const JSZip = require('jszip');
 const { EdgeTTS } = require('node-edge-tts');
@@ -191,7 +195,16 @@ function uiTexts() {
     closeBehavior: '关闭按钮行为', closeQuit: '退出程序', closeTray: '最小化到系统托盘',
     version: '版本', aboutDesc: '导入本地书籍，逐句高亮朗读，支持书签与笔记。',
     copied: '书籍库路径已复制', trayShow: '显示窗口', trayQuit: '退出', close: '关闭',
-    needBook: '请先打开一本书'
+    needBook: '请先打开一本书',
+    softwareUpdate: '软件更新', updateDesc: '从 GitHub 检查并安装新版本，旧版本会保留在本地。',
+    autoCheck: '启动时自动检查更新', checkNow: '检查更新', checking: '正在检查…',
+    upToDate: '已是最新版本', newVersion: '发现新版本', updateNotes: '更新说明',
+    downloadUpdate: '下载并更新', downloading: '正在下载…', verifying: '正在校验…',
+    installNow: '安装并重启', updateLater: '稍后', updateAvailable: '有新版本可用',
+    restartHint: '下载完成后会保留旧版 exe，自动启动新版。',
+    openRelease: '打开发布页', updateError: '更新失败', shaWarn: '校验未通过，已取消安装',
+    checkFail: '检查失败，请检查网络后重试', downloadFail: '下载失败，请稍后重试',
+    installFail: '安装失败，请手动下载安装', cancel: '取消', updateFound: '发现新版本 {v}，是否现在更新？'
   } : {
     appName: 'my reading assistant', file: 'File', edit: 'Edit',
     import: 'Import Books…', back: 'Back to Shelf', settingsMenu: 'Settings…', quit: 'Quit',
@@ -201,7 +214,16 @@ function uiTexts() {
     closeBehavior: 'Close button action', closeQuit: 'Quit application', closeTray: 'Minimize to system tray',
     version: 'Version', aboutDesc: 'Import local books, read along with word highlighting, and keep bookmarks and notes.',
     copied: 'Library path copied', trayShow: 'Show window', trayQuit: 'Quit', close: 'Close',
-    needBook: 'Open a book first'
+    needBook: 'Open a book first',
+    softwareUpdate: 'Software update', updateDesc: 'Check and install new versions from GitHub; older versions are kept locally.',
+    autoCheck: 'Check for updates on startup', checkNow: 'Check for updates', checking: 'Checking…',
+    upToDate: 'You are up to date', newVersion: 'New version available', updateNotes: 'Release notes',
+    downloadUpdate: 'Download & update', downloading: 'Downloading…', verifying: 'Verifying…',
+    installNow: 'Install & restart', updateLater: 'Later', updateAvailable: 'Update available',
+    restartHint: 'Old exe is kept and the new version starts automatically.',
+    openRelease: 'Open release page', updateError: 'Update failed', shaWarn: 'Verification failed, installation cancelled',
+    checkFail: 'Check failed, please retry later', downloadFail: 'Download failed, please retry later',
+    installFail: 'Installation failed, please download manually', cancel: 'Cancel', updateFound: 'Version {v} is available. Update now?'
   };
 }
 
@@ -233,6 +255,7 @@ function writeSettings(patch) {
   return data;
 }
 function closeAction() { return readSettings().closeAction === 'tray' ? 'tray' : 'quit'; }
+function autoCheckUpdate() { return readSettings().autoCheckUpdate !== false; }
 
 function showMainWindow() {
   if (!win || win.isDestroyed()) return;
@@ -318,6 +341,15 @@ app.whenReady().then(() => {
   buildAppMenu();
   if (closeAction() === 'tray') ensureTray();
   createWindow();
+  // 启动后后台检查一次更新（可在设置中关闭），发现新版本通知界面
+  setTimeout(() => {
+    if (!autoCheckUpdate()) return;
+    updateCheck().then(res => {
+      if (res.ok && res.hasUpdate && win && !win.isDestroyed()) {
+        win.webContents.send('update-available', res);
+      }
+    }).catch(() => {});
+  }, 6000);
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -326,6 +358,131 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+
+// ---------- 检查更新 / 自动更新 ----------
+const UPDATE_API = 'https://api.github.com/repos/matrix4quant/My-Reading-Assistant/releases/latest';
+const UA_UPDATE = 'MyReadingAssistant/2.2 (personal reading app)';
+
+function versionTuple(v) {
+  const m = String(v || '').match(/^v?(\d+)\.(\d+)\.(\d+)/);
+  return m ? [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)] : null;
+}
+function isNewer(a, b) {
+  const x = versionTuple(a), y = versionTuple(b);
+  if (!x || !y) return false;
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return false;
+}
+function updateCheck() {
+  return new Promise((resolve, reject) => {
+    const req = https.get(UPDATE_API, {
+      timeout: 15000,
+      headers: { 'User-Agent': UA_UPDATE, 'Accept': 'application/vnd.github+json' }
+    }, res => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        return updateCheckAt(res.headers.location).then(resolve, reject);
+      }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
+      let d = '';
+      res.setEncoding('utf8');
+      res.on('data', c => { d += c; if (d.length > 2e6) req.destroy(); });
+      res.on('end', () => {
+        try {
+          const rel = JSON.parse(d);
+          const latest = String(rel.tag_name || '').replace(/^v/, '');
+          const current = app.getVersion();
+          const asset = (rel.assets || []).find(a => /\.exe$/i.test(a.name)) || null;
+          const hash = String(rel.body || '').match(/SHA-256:\s*([a-fA-F0-9]{64})/i);
+          resolve({
+            ok: true, current, latest,
+            hasUpdate: !!latest && isNewer(latest, current),
+            notes: String(rel.body || ''),
+            publishedAt: rel.published_at || '',
+            url: rel.html_url || '',
+            assetName: asset ? asset.name : '',
+            downloadUrl: asset ? asset.browser_download_url : '',
+            size: asset ? asset.size : 0,
+            sha256: hash ? hash[1].toLowerCase() : ''
+          });
+        } catch (e) { reject(new Error('解析更新信息失败')); }
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('检查更新超时')));
+    req.on('error', reject);
+  });
+}
+function updateCheckAt(url) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { timeout: 15000, headers: { 'User-Agent': UA_UPDATE } }, res => {
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
+      let d = '';
+      res.setEncoding('utf8');
+      res.on('data', c => d += c);
+      res.on('end', () => { try { resolve(JSON.parse(d)); } catch (e) { reject(e); } });
+    });
+    req.on('timeout', () => req.destroy(new Error('请求超时')));
+    req.on('error', reject);
+  });
+}
+// 下载 Release 附件到临时文件；跟随 GitHub 的重定向，实时回报进度
+function downloadUpdate(url, dest, onProgress) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { timeout: 60000, headers: { 'User-Agent': UA_UPDATE } }, res => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        return downloadUpdate(res.headers.location, dest, onProgress).then(resolve, reject);
+      }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error('下载失败 HTTP ' + res.statusCode)); }
+      const total = Number(res.headers['content-length'] || 0);
+      let got = 0, lastPct = -1;
+      const out = fs.createWriteStream(dest);
+      res.on('data', c => {
+        got += c.length;
+        const pct = total ? Math.floor(got * 100 / total) : 0;
+        if (pct !== lastPct && pct % 2 === 0) { lastPct = pct; onProgress(pct); }
+      });
+      res.pipe(out);
+      out.on('finish', () => out.close(() => resolve({ size: got, total })));
+      out.on('error', e => { try { fs.unlinkSync(dest); } catch (_) {} reject(e); });
+    });
+    req.on('timeout', () => req.destroy(new Error('下载超时')));
+    req.on('error', e => { try { fs.unlinkSync(dest); } catch (_) {} reject(e); });
+  });
+}
+function sha256File(file) {
+  return new Promise((resolve, reject) => {
+    const h = crypto.createHash('sha256');
+    const s = fs.createReadStream(file);
+    s.on('data', c => h.update(c));
+    s.on('end', () => resolve(h.digest('hex')));
+    s.on('error', reject);
+  });
+}
+// portable exe 的真实路径在 PORTABLE_EXECUTABLE_FILE，process.execPath 指向临时解压目录
+function currentExePath() {
+  return process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+}
+// 运行中的 exe 无法覆盖自身：生成 PowerShell 脚本，等主进程退出后启动新版 exe。
+// 新版本使用带版本号的文件名，旧版 exe 原样保留在本地。
+function spawnUpdater(pid, newExe, scriptPath) {
+  const q = s => String(s).replace(/'/g, "''");
+  const ps = [
+    '$ErrorActionPreference = "SilentlyContinue"',
+    'for ($i = 0; $i -lt 120; $i++) {',
+    '  if (-not (Get-Process -Id ' + pid + ' -ErrorAction SilentlyContinue)) { break }',
+    '  Start-Sleep -Milliseconds 250',
+    '}',
+    'Start-Sleep -Milliseconds 400',
+    'Start-Process -FilePath \'' + q(newExe) + '\'',
+    'Remove-Item -LiteralPath \'' + q(scriptPath) + '\' -Force'
+  ].join('\r\n');
+  fs.writeFileSync(scriptPath, '\uFEFF' + ps, 'utf8');
+  const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], {
+    detached: true, stdio: 'ignore', windowsHide: true
+  });
+  child.unref();
+}
 
 // ---------- IPC ----------
 
@@ -425,6 +582,58 @@ ipcMain.handle('lib-path', () => booksDir());
 // 获取应用版本号
 ipcMain.handle('app-version', () => app.getVersion());
 
+// 检查 GitHub 上的最新版本
+ipcMain.handle('update-check', async () => {
+  try { return await updateCheck(); }
+  catch (e) { return { ok: false, error: e.message || String(e), current: app.getVersion() }; }
+});
+
+// 下载新版 exe 到临时目录，可选校验 SHA-256
+ipcMain.handle('update-download', async (event, info) => {
+  try {
+    const version = String((info && info.latest) || '').replace(/^v/, '');
+    const url = info && info.downloadUrl;
+    if (!url || !/^https:\/\//i.test(url)) throw new Error('没有可用的下载地址');
+    const dir = path.join(os.tmpdir(), 'my-reading-assistant-updates');
+    fs.mkdirSync(dir, { recursive: true });
+    const dest = path.join(dir, 'update-' + version + '.exe');
+    if (fs.existsSync(dest)) { try { fs.unlinkSync(dest); } catch (_) {} }
+    await downloadUpdate(url, dest, pct => {
+      if (!event.sender.isDestroyed()) event.sender.send('update-progress', pct);
+    });
+    const sha = await sha256File(dest);
+    const expected = String((info && info.sha256) || '').toLowerCase();
+    return {
+      ok: true, path: dest, version, sha256: sha,
+      verified: !!expected ? sha === expected : null
+    };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+});
+
+// 安装更新：先复制成带版本号的新 exe，再让临时脚本在退出后启动它
+ipcMain.handle('update-install', async (event, info) => {
+  try {
+    const src = info && info.path;
+    const version = String((info && info.version) || '').replace(/^v/, '');
+    if (!src || !fs.existsSync(src)) throw new Error('更新文件不存在');
+    if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('版本号无效');
+    const running = currentExePath();
+    const dir = path.dirname(running);
+    const target = path.join(dir, '阅读助手 ' + version + '.exe');
+    if (path.resolve(target) === path.resolve(running)) throw new Error('不能覆盖正在运行的程序');
+    fs.copyFileSync(src, target);
+    const script = path.join(os.tmpdir(), 'mra-update-' + Date.now() + '.ps1');
+    spawnUpdater(process.pid, target, script);
+    // 给渲染进程一点时间显示「正在重启」提示，再退出主程序
+    setTimeout(() => { forceQuit = true; app.quit(); }, 900);
+    return { ok: true, target, version, autoStart: true };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+});
+
 // 菜单栏信息（用于诊断与验证）
 ipcMain.handle('menu-info', () => ({
   locale: app.getLocale(),
@@ -446,8 +655,13 @@ ipcMain.handle('window-test', (event, action) => {
 ipcMain.handle('ui-texts', () => uiTexts());
 ipcMain.handle('settings-get', () => ({
   closeAction: closeAction(),
-  libPath: booksDir()
+  libPath: booksDir(),
+  autoCheckUpdate: autoCheckUpdate()
 }));
+ipcMain.handle('settings-set-auto-check', (event, value) => {
+  writeSettings({ autoCheckUpdate: value !== false });
+  return autoCheckUpdate();
+});
 ipcMain.handle('settings-set-close-action', (event, value) => {
   const v = value === 'tray' ? 'tray' : 'quit';
   writeSettings({ closeAction: v });
